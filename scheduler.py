@@ -20,6 +20,7 @@ from discord.ext import tasks
 import watchlist as wl
 from scoring import predict
 from high_confidence_alerts import check_high_confidence_alert
+import channel_settings as cs
 
 # UTC times corresponding to EST (UTC-5) — no DST adjustment needed for a
 # simple bot; adjust offsets manually for EDT (UTC-4) if desired.
@@ -196,7 +197,7 @@ async def _send_alert(
     embed_fn,
 ) -> None:
     """Send a scheduled alert to the configured channel."""
-    channel_id = os.getenv("DISCORD_CHANNEL_ID")
+    channel_id = cs.get_predictions_channel() or os.getenv("DISCORD_CHANNEL_ID")
     if not channel_id:
         return
     channel = bot.get_channel(int(channel_id))

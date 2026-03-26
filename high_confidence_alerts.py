@@ -18,6 +18,7 @@ import discord
 import alert_settings as als
 import watchlist as wl
 from scoring import PredictionResult, quick_summary
+import channel_settings as cs
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -53,6 +54,9 @@ def _set_cooldown(ticker: str) -> None:
 
 def _resolve_channel_id() -> str | None:
     """Return the alerts channel ID from settings, falling back to env var."""
+    cid = cs.get_alerts_channel()
+    if cid:
+        return str(cid)
     return als.get_channel_id() or os.getenv("DISCORD_CHANNEL_ID")
 
 

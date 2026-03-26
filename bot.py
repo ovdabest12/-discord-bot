@@ -2,16 +2,22 @@
 bot.py — Main entry point for the Stock Confidence Predictor Discord Bot.
 
 Commands:
-  /predict [TICKER]          — Analyze a stock and return a prediction
-  /watchlist add [TICKER]    — Add a stock to your watchlist
-  /watchlist remove [TICKER] — Remove a stock from your watchlist
-  /watchlist show            — Show all stocks on your watchlist
-  /digest                    — Trigger predictions for all watchlist stocks
-  /alerts on                 — Enable real-time market alerts in this channel
-  /alerts off                — Disable real-time market alerts
-  /alerts status             — Show current alert settings and monitored tickers
-  /alerts add [TICKER]       — Add a ticker to the alert monitor list
-  /alerts remove [TICKER]    — Remove a ticker from the alert monitor list
+  /predict [TICKER]                   — Analyze a stock and return a prediction
+  /quick [TICKER]                     — Quick one-liner prediction
+  /watchlist add [TICKER]             — Add a stock to your watchlist
+  /watchlist remove [TICKER]          — Remove a stock from your watchlist
+  /watchlist show                     — Show all stocks on your watchlist
+  /digest                             — Trigger predictions for all watchlist stocks
+  /alerts on                          — Enable real-time market alerts in this channel
+  /alerts off                         — Disable real-time market alerts
+  /alerts status                      — Show current alert settings and monitored tickers
+  /alerts add [TICKER]                — Add a ticker to the alert monitor list
+  /alerts remove [TICKER]             — Remove a ticker from the alert monitor list
+  /setchannel predictions #channel    — Set channel for daily prediction digests
+  /setchannel alerts #channel         — Set channel for big move price alerts
+  /setchannel news #channel           — Set channel for breaking news alerts
+  /setchannel all #channel            — Set ALL alert types to one channel
+  /channels                           — Show current channel configuration
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from scoring import predict, quick_summary
 from scheduler import setup_scheduler
 from alerts import setup_alerts
 import alert_settings as als
+import channel_settings as cs
 from high_confidence_alerts import check_high_confidence_alert
 
 load_dotenv()
@@ -279,6 +286,105 @@ async def alerts_remove(interaction: discord.Interaction, ticker: str) -> None:
 
 
 tree.add_command(alerts_group)
+
+
+# ---------------------------------------------------------------------------
+# /setchannel command group
+# ---------------------------------------------------------------------------
+setchannel_group = app_commands.Group(
+    name="setchannel", description="Configure which channels receive bot updates"
+)
+
+
+@setchannel_group.command(
+    name="predictions", description="Set the channel for daily prediction digests"
+)
+@app_commands.describe(channel="The channel to send daily prediction digests to")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def setchannel_predictions(
+    interaction: discord.Interaction, channel: discord.TextChannel
+) -> None:
+    cs.set_predictions_channel(channel.id)
+    await interaction.response.send_message(
+        f"✅ Daily predictions will now be sent to {channel.mention}",
+        ephemeral=True,
+    )
+
+
+@setchannel_group.command(
+    name="alerts", description="Set the channel for big move price alerts"
+)
+@app_commands.describe(channel="The channel to send big move price alerts to")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def setchannel_alerts(
+    interaction: discord.Interaction, channel: discord.TextChannel
+) -> None:
+    cs.set_alerts_channel(channel.id)
+    await interaction.response.send_message(
+        f"✅ Big move alerts will now be sent to {channel.mention}",
+        ephemeral=True,
+    )
+
+
+@setchannel_group.command(
+    name="news", description="Set the channel for breaking news alerts"
+)
+@app_commands.describe(channel="The channel to send breaking news alerts to")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def setchannel_news(
+    interaction: discord.Interaction, channel: discord.TextChannel
+) -> None:
+    cs.set_news_channel(channel.id)
+    await interaction.response.send_message(
+        f"✅ Breaking news alerts will now be sent to {channel.mention}",
+        ephemeral=True,
+    )
+
+
+@setchannel_group.command(
+    name="all", description="Set ALL alert types to one channel"
+)
+@app_commands.describe(channel="The channel to send all bot updates to")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def setchannel_all(
+    interaction: discord.Interaction, channel: discord.TextChannel
+) -> None:
+    cs.set_all_channels(channel.id)
+    await interaction.response.send_message(
+        f"✅ All bot updates (predictions, alerts, news) will now be sent to {channel.mention}",
+        ephemeral=True,
+    )
+
+
+tree.add_command(setchannel_group)
+
+
+# ---------------------------------------------------------------------------
+# /channels command
+# ---------------------------------------------------------------------------
+@tree.command(name="channels", description="Show current channel configuration")
+async def channels_cmd(interaction: discord.Interaction) -> None:
+    settings = cs.get_all_settings()
+    fallback = "Not configured (using default)"
+
+    def _channel_str(channel_id: int | None) -> str:
+        return f"<#{channel_id}>" if channel_id else fallback
+
+    predictions_str = _channel_str(settings.get("predictions_channel_id"))
+    alerts_str = _channel_str(settings.get("alerts_channel_id"))
+    news_str = _channel_str(settings.get("news_channel_id"))
+
+    embed = discord.Embed(title="📺 Channel Configuration", color=discord.Color.blue())
+    embed.add_field(name="📊 Daily Predictions", value=predictions_str, inline=False)
+    embed.add_field(name="🚨 Big Move Alerts", value=alerts_str, inline=False)
+    embed.add_field(name="📰 Breaking News", value=news_str, inline=False)
+    embed.add_field(
+        name="💡 Quick checks",
+        value="Just use `/quick` or `/predict` in any channel!",
+        inline=False,
+    )
+    embed.set_footer(text="Use /setchannel to change these settings.")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # ---------------------------------------------------------------------------
