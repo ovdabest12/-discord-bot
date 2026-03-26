@@ -24,7 +24,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 import watchlist as wl
-from scoring import predict
+from scoring import predict, quick_summary
 from scheduler import setup_scheduler
 from alerts import setup_alerts
 import alert_settings as als
@@ -100,6 +100,19 @@ async def predict_cmd(interaction: discord.Interaction, ticker: str) -> None:
     result = await bot.loop.run_in_executor(None, predict, ticker)
     embed = _build_prediction_embed(result)
     await interaction.followup.send(embed=embed)
+
+
+# ---------------------------------------------------------------------------
+# /quick command
+# ---------------------------------------------------------------------------
+@tree.command(name="quick", description="Quick one-liner bullish/bearish prediction")
+@app_commands.describe(ticker="Stock ticker symbol (e.g. AAPL, TSLA, NQ=F)")
+async def quick_cmd(interaction: discord.Interaction, ticker: str) -> None:
+    await interaction.response.defer(thinking=True)
+    result = await bot.loop.run_in_executor(None, predict, ticker.upper())
+    emoji = "🟢" if result.direction == "UP" else ("🔴" if result.direction == "DOWN" else "🟡")
+    summary = quick_summary(result)
+    await interaction.followup.send(f"{emoji} **{result.ticker}** — {summary}")
 
 
 # ---------------------------------------------------------------------------

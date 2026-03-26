@@ -277,3 +277,74 @@ def predict(ticker: str) -> PredictionResult:
             confidence_label="Low",
             error=f"Error fetching data: {exc}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Quick summary helper
+# ---------------------------------------------------------------------------
+def quick_summary(result: PredictionResult) -> str:
+    """
+    Generate a short one-liner summary from a PredictionResult.
+
+    Returns something like:
+      "BULLISH (72%) — up +1.2% today, riding above its average, good news"
+    The language is intentionally simple and casual so anyone can understand.
+    """
+    if result.error:
+        return "N/A — data unavailable"
+
+    direction_word = {
+        "UP": "BULLISH",
+        "DOWN": "BEARISH",
+        "NEUTRAL": "NEUTRAL",
+    }.get(result.direction, "NEUTRAL")
+
+    snippets: list[str] = []
+    reasons = result.reasons  # 6 elements when no error
+
+    # ---- 1-day momentum (reasons[0]): "1-day momentum: +1.2% (bullish)" ----
+    if len(reasons) > 0:
+        m = re.search(r"([+-]\d+\.\d+)%", reasons[0])
+        if m:
+            pct = float(m.group(1))
+            if abs(pct) >= 0.3:
+                if pct > 0:
+                    snippets.append(f"up {abs(pct):.1f}% today")
+                else:
+                    snippets.append(f"down {abs(pct):.1f}% today")
+
+    # ---- 5-day trend (reasons[1]): "5-day trend: +3.4% (bullish)" ----------
+    if len(reasons) > 1:
+        m = re.search(r"([+-]\d+\.\d+)%", reasons[1])
+        if m:
+            pct = float(m.group(1))
+            if abs(pct) >= 1.0:
+                if pct > 0:
+                    snippets.append(f"been climbing {abs(pct):.1f}% this week")
+                else:
+                    snippets.append(f"been dropping {abs(pct):.1f}% this week")
+
+    # ---- MA position (reasons[3]): "Price vs 20-day MA: ... above/below MA" -
+    if len(reasons) > 3:
+        if "above" in reasons[3]:
+            snippets.append("riding above its average price")
+        elif "below" in reasons[3]:
+            snippets.append("sitting below its average price")
+
+    # ---- Volatility (reasons[4]): only flag if notably high ----------------
+    if len(reasons) > 4:
+        if "high" in reasons[4]:
+            snippets.append("very choppy right now")
+
+    # ---- News sentiment (reasons[5]): "News sentiment: positive/negative" --
+    if len(reasons) > 5:
+        news_r = reasons[5]
+        if "positive" in news_r and "neutral" not in news_r:
+            snippets.append("good news out there")
+        elif "negative" in news_r and "neutral" not in news_r:
+            snippets.append("bad news just dropped")
+
+    top_snippets = snippets[:3]
+    reason_str = ", ".join(top_snippets) if top_snippets else "mixed signals, unclear direction"
+
+    return f"{direction_word} ({int(result.confidence)}%) — {reason_str}"
