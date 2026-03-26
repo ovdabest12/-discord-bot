@@ -49,6 +49,8 @@ class PredictionResult:
     direction: str          # "UP", "DOWN", or "NEUTRAL"
     confidence: float       # 0–100
     confidence_label: str   # "Low", "Moderate-Low", etc.
+    up_probability: float = 0.0    # 0–100, probability of moving UP by 3 PM EST
+    down_probability: float = 0.0  # 0–100, probability of moving DOWN by 3 PM EST
     reasons: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -253,11 +255,17 @@ def predict(ticker: str) -> PredictionResult:
         confidence = max(0.0, min(100.0, confidence))
         label = _confidence_label(confidence)
 
+        # ---- UP / DOWN probabilities -------------------------------------
+        up_probability = round(composite * 100, 1)
+        down_probability = round((1.0 - composite) * 100, 1)
+
         return PredictionResult(
             ticker=ticker,
             direction=direction,
             confidence=confidence,
             confidence_label=label,
+            up_probability=up_probability,
+            down_probability=down_probability,
             reasons=[reasons_1d, reasons_5d, reasons_20d, reasons_ma, reasons_vol, reasons_news],
         )
 
