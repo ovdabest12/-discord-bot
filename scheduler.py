@@ -2,8 +2,10 @@
 scheduler.py — Scheduled digest tasks for the Stock Confidence Predictor bot.
 
 Schedules:
-  - Morning Digest: 9:00 AM EST (14:00 UTC)
-  - Afternoon Alert: 3:15 PM EST (20:15 UTC)
+  - London/NY Overlap: 8:00 AM EST (13:00 UTC)
+  - Morning Digest:    9:00 AM EST (14:00 UTC)
+  - US Market Open:    9:30 AM EST (14:30 UTC)
+  - Afternoon Alert:   3:15 PM EST (20:15 UTC)
 """
 
 from __future__ import annotations
@@ -20,10 +22,16 @@ from scoring import predict
 
 # UTC times corresponding to EST (UTC-5) — no DST adjustment needed for a
 # simple bot; adjust offsets manually for EDT (UTC-4) if desired.
-MORNING_UTC_HOUR = 14   # 9:00 AM EST = 14:00 UTC
+LONDON_NY_UTC_HOUR = 13   # 8:00 AM EST = 13:00 UTC
+LONDON_NY_UTC_MIN = 0
+
+MORNING_UTC_HOUR = 14     # 9:00 AM EST = 14:00 UTC
 MORNING_UTC_MIN = 0
 
-AFTERNOON_UTC_HOUR = 20  # 3:15 PM EST = 20:15 UTC
+US_OPEN_UTC_HOUR = 14     # 9:30 AM EST = 14:30 UTC
+US_OPEN_UTC_MIN = 30
+
+AFTERNOON_UTC_HOUR = 20   # 3:15 PM EST = 20:15 UTC
 AFTERNOON_UTC_MIN = 15
 
 
@@ -50,7 +58,7 @@ def _build_prediction_embed(result) -> discord.Embed:
     )
     embed.add_field(
         name="📅 Window",
-        value="3:15 PM – 5:30 PM EST",
+        value="3:00 PM EST",
         inline=True,
     )
     if result.reasons:
@@ -75,6 +83,65 @@ def _build_morning_embed(result) -> discord.Embed:
         f"**Outlook:** {_direction_emoji(result.direction)} {result.direction} "
         f"| **Confidence:** {result.confidence}% ({result.confidence_label})"
     )
+    embed.add_field(
+        name="📅 Window",
+        value="3:00 PM EST",
+        inline=True,
+    )
+    if result.reasons:
+        reasons_text = "\n".join(f"• {r}" for r in result.reasons[:3])
+        embed.add_field(name="Key Signals", value=reasons_text, inline=False)
+    return embed
+
+
+def _build_london_ny_embed(result) -> discord.Embed:
+    color = discord.Color.green() if result.direction == "UP" else (
+        discord.Color.red() if result.direction == "DOWN" else discord.Color.yellow()
+    )
+    embed = discord.Embed(
+        title=f"🔥 {result.ticker} — London/NY Overlap",
+        color=color,
+    )
+    if result.error:
+        embed.description = f"⚠️ {result.error}"
+        return embed
+
+    embed.description = (
+        f"**Outlook:** {_direction_emoji(result.direction)} {result.direction} "
+        f"| **Confidence:** {result.confidence}% ({result.confidence_label})"
+    )
+    embed.add_field(
+        name="📅 Window",
+        value="3:00 PM EST",
+        inline=True,
+    )
+    if result.reasons:
+        reasons_text = "\n".join(f"• {r}" for r in result.reasons[:3])
+        embed.add_field(name="Key Signals", value=reasons_text, inline=False)
+    return embed
+
+
+def _build_us_open_embed(result) -> discord.Embed:
+    color = discord.Color.green() if result.direction == "UP" else (
+        discord.Color.red() if result.direction == "DOWN" else discord.Color.yellow()
+    )
+    embed = discord.Embed(
+        title=f"🇺🇸 {result.ticker} — US Market Open",
+        color=color,
+    )
+    if result.error:
+        embed.description = f"⚠️ {result.error}"
+        return embed
+
+    embed.description = (
+        f"**Outlook:** {_direction_emoji(result.direction)} {result.direction} "
+        f"| **Confidence:** {result.confidence}% ({result.confidence_label})"
+    )
+    embed.add_field(
+        name="📅 Window",
+        value="3:00 PM EST",
+        inline=True,
+    )
     if result.reasons:
         reasons_text = "\n".join(f"• {r}" for r in result.reasons[:3])
         embed.add_field(name="Key Signals", value=reasons_text, inline=False)
@@ -83,6 +150,30 @@ def _build_morning_embed(result) -> discord.Embed:
 
 def setup_scheduler(bot: discord.Client) -> None:
     """Register and start the scheduled digest tasks."""
+
+    @tasks.loop(hours=24)
+    async def london_ny_overlap() -> None:
+        channel_id = os.getenv("DISCORD_CHANNEL_ID")
+        if not channel_id:
+            return
+        channel = bot.get_channel(int(channel_id))
+        if not channel:
+            return
+
+        tickers = wl.get_all_tickers()
+        if not tickers:
+            await channel.send(
+                "🔥 **London/NY Overlap (8:00 AM EST)** — No stocks on any watchlist yet."
+            )
+            return
+
+        await channel.send(
+            f"🔥 **London/NY Overlap** — 8:00 AM EST predictions for {len(tickers)} stock(s):"
+        )
+        for ticker in tickers:
+            result = await bot.loop.run_in_executor(None, predict, ticker)
+            embed = _build_london_ny_embed(result)
+            await channel.send(embed=embed)
 
     @tasks.loop(hours=24)
     async def morning_digest() -> None:
@@ -104,6 +195,30 @@ def setup_scheduler(bot: discord.Client) -> None:
         for ticker in tickers:
             result = await bot.loop.run_in_executor(None, predict, ticker)
             embed = _build_morning_embed(result)
+            await channel.send(embed=embed)
+
+    @tasks.loop(hours=24)
+    async def us_market_open() -> None:
+        channel_id = os.getenv("DISCORD_CHANNEL_ID")
+        if not channel_id:
+            return
+        channel = bot.get_channel(int(channel_id))
+        if not channel:
+            return
+
+        tickers = wl.get_all_tickers()
+        if not tickers:
+            await channel.send(
+                "🇺🇸 **US Market Open (9:30 AM EST)** — No stocks on any watchlist yet."
+            )
+            return
+
+        await channel.send(
+            f"🇺🇸 **US Market Open** — 9:30 AM EST predictions for {len(tickers)} stock(s):"
+        )
+        for ticker in tickers:
+            result = await bot.loop.run_in_executor(None, predict, ticker)
+            embed = _build_us_open_embed(result)
             await channel.send(embed=embed)
 
     @tasks.loop(hours=24)
@@ -130,12 +245,36 @@ def setup_scheduler(bot: discord.Client) -> None:
             embed = _build_prediction_embed(result)
             await channel.send(embed=embed)
 
+    @london_ny_overlap.before_loop
+    async def before_london_ny() -> None:
+        await bot.wait_until_ready()
+        now = datetime.datetime.utcnow()
+        target = now.replace(
+            hour=LONDON_NY_UTC_HOUR, minute=LONDON_NY_UTC_MIN, second=0, microsecond=0
+        )
+        if now >= target:
+            target += datetime.timedelta(days=1)
+        delta = (target - now).total_seconds()
+        await asyncio.sleep(delta)
+
     @morning_digest.before_loop
     async def before_morning() -> None:
         await bot.wait_until_ready()
         now = datetime.datetime.utcnow()
         target = now.replace(
             hour=MORNING_UTC_HOUR, minute=MORNING_UTC_MIN, second=0, microsecond=0
+        )
+        if now >= target:
+            target += datetime.timedelta(days=1)
+        delta = (target - now).total_seconds()
+        await asyncio.sleep(delta)
+
+    @us_market_open.before_loop
+    async def before_us_open() -> None:
+        await bot.wait_until_ready()
+        now = datetime.datetime.utcnow()
+        target = now.replace(
+            hour=US_OPEN_UTC_HOUR, minute=US_OPEN_UTC_MIN, second=0, microsecond=0
         )
         if now >= target:
             target += datetime.timedelta(days=1)
@@ -154,5 +293,7 @@ def setup_scheduler(bot: discord.Client) -> None:
         delta = (target - now).total_seconds()
         await asyncio.sleep(delta)
 
+    london_ny_overlap.start()
     morning_digest.start()
+    us_market_open.start()
     afternoon_alert.start()
