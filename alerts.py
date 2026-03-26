@@ -24,6 +24,7 @@ import alert_settings as als
 import watchlist as wl
 from scoring import predict, quick_summary
 from high_confidence_alerts import check_high_confidence_alert
+import channel_settings as cs
 
 # EST is UTC-5 (standard time); adjust to -4 for EDT if desired.
 _EST_OFFSET = datetime.timezone(datetime.timedelta(hours=-5))
@@ -284,6 +285,22 @@ def _resolve_channel_id() -> str | None:
     return als.get_channel_id() or os.getenv("DISCORD_CHANNEL_ID")
 
 
+def _resolve_alerts_channel_id() -> str | None:
+    """Return the big move alerts channel ID, with fallback chain."""
+    cid = cs.get_alerts_channel()
+    if cid:
+        return str(cid)
+    return als.get_channel_id() or os.getenv("DISCORD_CHANNEL_ID")
+
+
+def _resolve_news_channel_id() -> str | None:
+    """Return the news alerts channel ID, with fallback chain."""
+    cid = cs.get_news_channel()
+    if cid:
+        return str(cid)
+    return als.get_channel_id() or os.getenv("DISCORD_CHANNEL_ID")
+
+
 # ---------------------------------------------------------------------------
 # Task setup
 # ---------------------------------------------------------------------------
@@ -296,7 +313,7 @@ def setup_alerts(bot: discord.Client) -> None:
         """Detect significant price moves and send Discord alerts."""
         if not als.is_enabled():
             return
-        channel_id = _resolve_channel_id()
+        channel_id = _resolve_alerts_channel_id()
         if not channel_id:
             return
         channel = bot.get_channel(int(channel_id))
@@ -383,7 +400,7 @@ def setup_alerts(bot: discord.Client) -> None:
         """Scan headlines for market-moving news and send Discord alerts."""
         if not als.is_enabled():
             return
-        channel_id = _resolve_channel_id()
+        channel_id = _resolve_news_channel_id()
         if not channel_id:
             return
         channel = bot.get_channel(int(channel_id))
