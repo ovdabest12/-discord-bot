@@ -28,6 +28,7 @@ from scoring import predict, quick_summary
 from scheduler import setup_scheduler
 from alerts import setup_alerts
 import alert_settings as als
+from high_confidence_alerts import check_high_confidence_alert
 
 load_dotenv()
 
@@ -100,6 +101,7 @@ async def predict_cmd(interaction: discord.Interaction, ticker: str) -> None:
     result = await bot.loop.run_in_executor(None, predict, ticker)
     embed = _build_prediction_embed(result)
     await interaction.followup.send(embed=embed)
+    bot.loop.create_task(check_high_confidence_alert(result, bot))
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +115,7 @@ async def quick_cmd(interaction: discord.Interaction, ticker: str) -> None:
     emoji = "🟢" if result.direction == "UP" else ("🔴" if result.direction == "DOWN" else "🟡")
     summary = quick_summary(result)
     await interaction.followup.send(f"{emoji} **{result.ticker}** — {summary}")
+    bot.loop.create_task(check_high_confidence_alert(result, bot))
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +302,7 @@ async def digest_cmd(interaction: discord.Interaction) -> None:
     for ticker in tickers:
         result = await bot.loop.run_in_executor(None, predict, ticker)
         embeds.append(_build_prediction_embed(result))
+        bot.loop.create_task(check_high_confidence_alert(result, bot))
 
     # Discord allows up to 10 embeds per message; send in batches if needed
     batch_size = 10

@@ -23,6 +23,7 @@ from discord.ext import tasks
 import alert_settings as als
 import watchlist as wl
 from scoring import predict, quick_summary
+from high_confidence_alerts import check_high_confidence_alert
 
 # EST is UTC-5 (standard time); adjust to -4 for EDT if desired.
 _EST_OFFSET = datetime.timezone(datetime.timedelta(hours=-5))
@@ -347,6 +348,7 @@ def setup_alerts(bot: discord.Client) -> None:
                 # Run a quick prediction so the alert explains what it means
                 pred_summary = None
                 pred_direction = None
+                pred_result = None
                 try:
                     pred_result = await bot.loop.run_in_executor(None, predict, ticker)
                     if not pred_result.error:
@@ -367,6 +369,8 @@ def setup_alerts(bot: discord.Client) -> None:
                 )
                 await channel.send(embed=embed)
                 _set_cooldown(ticker, direction)
+                if pred_result is not None:
+                    await check_high_confidence_alert(pred_result, bot)
             except Exception:
                 pass  # Never let one ticker failure abort the whole loop
 
@@ -417,6 +421,7 @@ def setup_alerts(bot: discord.Client) -> None:
                     # Run a quick prediction so the alert explains what it means
                     pred_summary = None
                     pred_direction = None
+                    pred_result = None
                     try:
                         pred_result = await bot.loop.run_in_executor(
                             None, predict, ticker
@@ -436,6 +441,8 @@ def setup_alerts(bot: discord.Client) -> None:
                         prediction_direction=pred_direction,
                     )
                     await channel.send(embed=embed)
+                    if pred_result is not None:
+                        await check_high_confidence_alert(pred_result, bot)
                     break  # One news alert per ticker per poll cycle
             except Exception:
                 pass
