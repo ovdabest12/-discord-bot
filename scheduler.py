@@ -19,6 +19,7 @@ from discord.ext import tasks
 
 import watchlist as wl
 from scoring import predict
+from high_confidence_alerts import check_high_confidence_alert
 
 # UTC times corresponding to EST (UTC-5) — no DST adjustment needed for a
 # simple bot; adjust offsets manually for EDT (UTC-4) if desired.
@@ -211,6 +212,7 @@ async def _send_alert(
     for ticker in tickers:
         result = await bot.loop.run_in_executor(None, predict, ticker)
         await channel.send(embed=embed_fn(result))
+        await check_high_confidence_alert(result, bot)
 
 
 async def _wait_until_utc(bot: discord.Client, utc_hour: int, utc_minute: int) -> None:
