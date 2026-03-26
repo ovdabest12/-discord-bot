@@ -22,6 +22,7 @@ from discord.ext import tasks
 
 import alert_settings as als
 import watchlist as wl
+from scoring import predict, quick_summary
 
 # EST is UTC-5 (standard time); adjust to -4 for EDT if desired.
 _EST_OFFSET = datetime.timezone(datetime.timedelta(hours=-5))
@@ -132,6 +133,8 @@ def _build_move_embed(
     current_price: float,
     price_change: float,
     volume_spike: float | None,
+    prediction_summary: str | None = None,
+    prediction_direction: str | None = None,
 ) -> discord.Embed:
     abs_pct = abs(pct_change)
     if abs_pct >= EXTREME_THRESHOLD:
@@ -161,7 +164,19 @@ def _build_move_embed(
             name="Volume Spike", value=f"{volume_spike:.1f}x normal", inline=True
         )
     embed.add_field(name="⏰ Detected at", value=time_str, inline=False)
-    embed.set_footer(text=f"💡 Tip: Check /predict {ticker} for full analysis")
+
+    if prediction_summary and prediction_direction:
+        pred_emoji = (
+            "🟢" if prediction_direction == "UP"
+            else ("🔴" if prediction_direction == "DOWN" else "🟡")
+        )
+        parts = prediction_summary.split(" — ", 1)
+        embed.add_field(name=f"{pred_emoji} Outlook", value=parts[0], inline=True)
+        if len(parts) > 1:
+            embed.add_field(name="💡 Why", value=parts[1], inline=False)
+        embed.set_footer(text=f"⚡ Use /predict {ticker} for the full breakdown")
+    else:
+        embed.set_footer(text=f"💡 Tip: Check /predict {ticker} for full analysis")
     return embed
 
 
@@ -213,6 +228,9 @@ def _build_news_embed(
     headline: str,
     tickers: list[str],
     sentiment: str,
+    prediction_summary: str | None = None,
+    prediction_ticker: str | None = None,
+    prediction_direction: str | None = None,
 ) -> discord.Embed:
     now_est = datetime.datetime.now(_EST_OFFSET)
     time_str = now_est.strftime("%I:%M %p") + " EST"
@@ -234,7 +252,25 @@ def _build_news_embed(
         name="📊 Sentiment", value=_sentiment_display(sentiment), inline=True
     )
     embed.add_field(name="⏰ Time", value=time_str, inline=True)
-    embed.set_footer(text="💡 React fast — use /predict to check current signals")
+
+    if prediction_summary and prediction_direction and prediction_ticker:
+        pred_emoji = (
+            "🟢" if prediction_direction == "UP"
+            else ("🔴" if prediction_direction == "DOWN" else "🟡")
+        )
+        parts = prediction_summary.split(" — ", 1)
+        embed.add_field(
+            name=f"{pred_emoji} {prediction_ticker} Outlook",
+            value=parts[0],
+            inline=True,
+        )
+        if len(parts) > 1:
+            embed.add_field(name="💡 Why", value=parts[1], inline=False)
+        embed.set_footer(
+            text=f"⚡ React fast — use /predict {prediction_ticker} for full analysis"
+        )
+    else:
+        embed.set_footer(text="💡 React fast — use /predict to check current signals")
     return embed
 
 
@@ -308,6 +344,17 @@ def setup_alerts(bot: discord.Client) -> None:
                     else None
                 )
 
+                # Run a quick prediction so the alert explains what it means
+                pred_summary = None
+                pred_direction = None
+                try:
+                    pred_result = await bot.loop.run_in_executor(None, predict, ticker)
+                    if not pred_result.error:
+                        pred_summary = quick_summary(pred_result)
+                        pred_direction = pred_result.direction
+                except Exception:
+                    pass
+
                 embed = _build_move_embed(
                     ticker=ticker,
                     direction=direction,
@@ -315,6 +362,8 @@ def setup_alerts(bot: discord.Client) -> None:
                     current_price=current_price,
                     price_change=price_change,
                     volume_spike=volume_spike,
+                    prediction_summary=pred_summary,
+                    prediction_direction=pred_direction,
                 )
                 await channel.send(embed=embed)
                 _set_cooldown(ticker, direction)
@@ -365,18 +414,31 @@ def setup_alerts(bot: discord.Client) -> None:
                         if rt not in related:
                             related.append(rt)
 
+                    # Run a quick prediction so the alert explains what it means
+                    pred_summary = None
+                    pred_direction = None
+                    try:
+                        pred_result = await bot.loop.run_in_executor(
+                            None, predict, ticker
+                        )
+                        if not pred_result.error:
+                            pred_summary = quick_summary(pred_result)
+                            pred_direction = pred_result.direction
+                    except Exception:
+                        pass
+
                     embed = _build_news_embed(
                         headline=headline,
                         tickers=related[:5],
                         sentiment=sentiment,
+                        prediction_summary=pred_summary,
+                        prediction_ticker=ticker,
+                        prediction_direction=pred_direction,
                     )
                     await channel.send(embed=embed)
                     break  # One news alert per ticker per poll cycle
             except Exception:
                 pass
-    @price_monitor.before_loop
-    async def before_price_monitor() -> None:
-        await bot.wait_until_ready()
 
     @news_monitor.before_loop
     async def before_news_monitor() -> None:
