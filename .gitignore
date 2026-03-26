@@ -1,4 +1,5 @@
 .env
 __pycache__/
 watchlists.json
+alert_settings.json
 *.pyc
