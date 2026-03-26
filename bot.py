@@ -7,6 +7,11 @@ Commands:
   /watchlist remove [TICKER] — Remove a stock from your watchlist
   /watchlist show            — Show all stocks on your watchlist
   /digest                    — Trigger predictions for all watchlist stocks
+  /alerts on                 — Enable real-time market alerts in this channel
+  /alerts off                — Disable real-time market alerts
+  /alerts status             — Show current alert settings and monitored tickers
+  /alerts add [TICKER]       — Add a ticker to the alert monitor list
+  /alerts remove [TICKER]    — Remove a ticker from the alert monitor list
 """
 
 from __future__ import annotations
@@ -21,6 +26,8 @@ from dotenv import load_dotenv
 import watchlist as wl
 from scoring import predict
 from scheduler import setup_scheduler
+from alerts import setup_alerts
+import alert_settings as als
 
 load_dotenv()
 
@@ -157,6 +164,108 @@ tree.add_command(watchlist_group)
 
 
 # ---------------------------------------------------------------------------
+# /alerts command group
+# ---------------------------------------------------------------------------
+alerts_group = app_commands.Group(
+    name="alerts", description="Manage real-time market alerts for big moves and news"
+)
+
+
+@alerts_group.command(
+    name="on", description="Enable big move alerts in the current channel"
+)
+async def alerts_on(interaction: discord.Interaction) -> None:
+    als.set_enabled(str(interaction.channel_id), True)
+    await interaction.response.send_message(
+        "✅ Real-time market alerts **enabled** in this channel!\n"
+        "You'll be pinged for significant price moves and breaking news.\n"
+        "Use `/alerts status` to see what's being monitored.",
+        ephemeral=True,
+    )
+
+
+@alerts_group.command(name="off", description="Disable real-time market alerts")
+async def alerts_off(interaction: discord.Interaction) -> None:
+    als.set_enabled(None, False)
+    await interaction.response.send_message(
+        "🔕 Real-time market alerts **disabled**.", ephemeral=True
+    )
+
+
+@alerts_group.command(
+    name="status",
+    description="Show current alert settings and monitored tickers",
+)
+async def alerts_status(interaction: discord.Interaction) -> None:
+    enabled = als.is_enabled()
+    channel_id = als.get_channel_id()
+    tickers = als.get_monitored_tickers()
+
+    status_emoji = "✅" if enabled else "❌"
+    channel_str = f"<#{channel_id}>" if channel_id else "Not set"
+    ticker_list = ", ".join(f"`{t}`" for t in tickers) if tickers else "None"
+
+    embed = discord.Embed(
+        title="🔔 Alert System Status",
+        color=discord.Color.green() if enabled else discord.Color.red(),
+    )
+    embed.add_field(
+        name="Status",
+        value=f"{status_emoji} {'Enabled' if enabled else 'Disabled'}",
+        inline=True,
+    )
+    embed.add_field(name="Alert Channel", value=channel_str, inline=True)
+    embed.add_field(name="Monitored Tickers", value=ticker_list, inline=False)
+    embed.add_field(
+        name="Alert Thresholds",
+        value=(
+            "⚠️ Notable: ±0.5% in 5 min\n"
+            "🚨 Big: ±1.0% in 5 min\n"
+            "🔴 Extreme: ±2.0% in 5 min"
+        ),
+        inline=False,
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@alerts_group.command(
+    name="add", description="Add a ticker to the alert monitor list"
+)
+@app_commands.describe(ticker="Stock or futures ticker to monitor (e.g. AAPL, NQ=F)")
+async def alerts_add(interaction: discord.Interaction, ticker: str) -> None:
+    ticker = ticker.upper()
+    added = als.add_ticker(ticker)
+    if added:
+        await interaction.response.send_message(
+            f"✅ **{ticker}** added to the alert monitor list.", ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"ℹ️ **{ticker}** is already being monitored.", ephemeral=True
+        )
+
+
+@alerts_group.command(
+    name="remove", description="Remove a ticker from the alert monitor list"
+)
+@app_commands.describe(ticker="Ticker to stop monitoring")
+async def alerts_remove(interaction: discord.Interaction, ticker: str) -> None:
+    ticker = ticker.upper()
+    removed = als.remove_ticker(ticker)
+    if removed:
+        await interaction.response.send_message(
+            f"🗑️ **{ticker}** removed from the alert monitor list.", ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"⚠️ **{ticker}** was not found in the monitor list.", ephemeral=True
+        )
+
+
+tree.add_command(alerts_group)
+
+
+# ---------------------------------------------------------------------------
 # /digest command
 # ---------------------------------------------------------------------------
 @tree.command(
@@ -202,6 +311,7 @@ async def on_ready() -> None:
     print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
     print(f"   Slash commands synced globally.")
     setup_scheduler(bot)
+    setup_alerts(bot)
 
 
 # ---------------------------------------------------------------------------
